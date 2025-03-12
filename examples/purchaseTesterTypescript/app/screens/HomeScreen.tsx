@@ -157,7 +157,10 @@ const HomeScreen: React.FC<Props> = ({navigation}) => {
 
   const showManageSubscriptions = async () => {
     try {
-      await Purchases.showManageSubscriptions();
+      await Purchases.showManageSubscriptions(() => {
+        console.log('Manage subscriptions modal was dismissed');
+        // You can refresh customer info or perform other actions here
+      });
     } catch (error) {
       console.log(`Error showing sheet for managing subscriptions: ${error}`);
     }

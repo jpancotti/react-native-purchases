@@ -1,4 +1,3 @@
-
 //
 //  Created by RevenueCat.
 //  Copyright © 2019 RevenueCat. All rights reserved.
@@ -14,6 +13,8 @@ typedef void (^StartPurchaseBlock)(PurchaseCompletedBlock);
 @interface RNPurchases () <RCPurchasesDelegate>
 
 @property (nonatomic, retain) NSMutableArray<StartPurchaseBlock> *defermentBlocks;
+@property (nonatomic, copy) RCTResponseSenderBlock manageSubscriptionsDismissCallback;
+@property (nonatomic, assign) BOOL didShowManageSubscriptions;
 
 @end
 
@@ -468,10 +469,26 @@ RCT_EXPORT_METHOD(beginRefundRequestForProductId:(NSString *)productIdentifier
 }
 
 RCT_EXPORT_METHOD(showManageSubscriptions:
-                  (RCTPromiseResolveBlock)resolve
+                  (RCTResponseSenderBlock)onDismiss
+                  resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject) {
     #if TARGET_OS_IPHONE && !TARGET_OS_TV
     if (@available(iOS 13.0, macOS 10.15, visionOS 1.0, *)) {
+        // Save callback for later
+        self.manageSubscriptionsDismissCallback = onDismiss;
+        self.didShowManageSubscriptions = NO;
+        
+        // Set up an observer for the window's presentation stack
+        // This will help us detect when the system sheet is dismissed
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(checkForPresentationChanges:)
+                                                     name:UIWindowDidBecomeVisibleNotification
+                                                   object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(checkForPresentationChanges:)
+                                                     name:UIWindowDidBecomeHiddenNotification
+                                                   object:nil];
+        
         [RCCommonFunctionality showManageSubscriptions:^(RCErrorContainer * _Nullable errorContainer) {
             if (errorContainer) {
                 reject(
@@ -479,8 +496,19 @@ RCT_EXPORT_METHOD(showManageSubscriptions:
                     errorContainer.message,
                     errorContainer.error
                 );
+                // Clean up if there was an error
+                [self cleanupObservers];
+                self.manageSubscriptionsDismissCallback = nil;
             } else {
                 resolve(nil);
+                // Mark that we've shown the sheet
+                self.didShowManageSubscriptions = YES;
+                
+                // Schedule a check for dismissal after a short delay
+                // This helps handle case when the sheet is dismissed immediately
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    [self checkIfSheetWasDismissed];
+                });
             }
         }];
     } else {
@@ -493,6 +521,47 @@ RCT_EXPORT_METHOD(showManageSubscriptions:
     NSError *error = [self createUnsupportedErrorWithDescription:@"Tried to present manage subscriptions sheet, but this functionality is only available on iOS devices."];
     reject([NSString stringWithFormat:@"%ld", (long)error.code], [error localizedDescription], error);
     #endif
+}
+
+// Check if the subscription management sheet is still visible
+- (void)checkIfSheetWasDismissed {
+    UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
+    
+    // Look for any presented view controllers
+    if (self.didShowManageSubscriptions && 
+        rootVC.presentedViewController == nil && 
+        self.manageSubscriptionsDismissCallback != nil) {
+        // Sheet was dismissed
+        self.manageSubscriptionsDismissCallback(@[]);
+        
+        // Clean up
+        [self cleanupObservers];
+        self.manageSubscriptionsDismissCallback = nil;
+        self.didShowManageSubscriptions = NO;
+    }
+}
+
+// Check when window visibility changes
+- (void)checkForPresentationChanges:(NSNotification *)notification {
+    // When a window visibility changes, check if our sheet has been dismissed
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self checkIfSheetWasDismissed];
+    });
+}
+
+// Clean up all observers
+- (void)cleanupObservers {
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:UIWindowDidBecomeVisibleNotification
+                                                  object:nil];
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:UIWindowDidBecomeHiddenNotification
+                                                  object:nil];
+}
+
+// Add dealloc to clean up observers
+- (void)dealloc {
+    [self cleanupObservers];
 }
 
 RCT_EXPORT_METHOD(showInAppMessages:(NSArray<NSNumber *> *)messageTypes

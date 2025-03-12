@@ -803,6 +803,7 @@ NativeModules.RNPurchases = {
   beginRefundRequestForEntitlementId: jest.fn(),
   beginRefundRequestForProductId: jest.fn(),
   showInAppMessages: jest.fn(),
+  showManageSubscriptions: jest.fn(),
   isConfigured: jest.fn(),
   parseAsWebPurchaseRedemption: jest.fn(),
   redeemWebPurchase: jest.fn()

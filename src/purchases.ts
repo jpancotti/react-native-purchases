@@ -1475,11 +1475,13 @@ export default class Purchases {
 
   /**
    * Presents the App Store sheet for managing subscriptions. Only available in iOS 13+ devices.
+   * 
+   * @param {() => void} onDismiss Optional callback to be called when the manage subscriptions modal is dismissed.
    */
-  public static async showManageSubscriptions(): Promise<void> {
+  public static async showManageSubscriptions(onDismiss?: () => void): Promise<void> {
     await Purchases.throwIfNotConfigured();
     await Purchases.throwIfAndroidPlatform();
-    return RNPurchases.showManageSubscriptions();
+    return RNPurchases.showManageSubscriptions(onDismiss);
   }
 
   /**
